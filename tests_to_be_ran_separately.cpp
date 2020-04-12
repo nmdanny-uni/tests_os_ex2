@@ -1,6 +1,8 @@
 #include <uthreads.h>
 #include <iostream>
 #include <gtest/gtest.h>
+#include <random>
+#include <algorithm>
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
  *                        IMPORTANT
@@ -94,7 +96,7 @@ TEST(Test1, BasicFunctionality)
         // this is the 2nd quantum in the program entire run
         EXPECT_EQ(uthread_get_total_quantums(), 2);
         ran = true;
-        uthread_terminate(1);
+        EXPECT_EQ ( uthread_terminate(1), 0);
     };
     EXPECT_EQ(uthread_spawn(t1, 0), 1);
     // spawning a thread shouldn't cause a switch
@@ -210,3 +212,64 @@ TEST(Test2, ThreadInteraction)
     ASSERT_EXIT(uthread_terminate(0), ::testing::ExitedWithCode(0), "");
 }
 
+
+/** This test involves multiple aspects:
+ * - Spawning the maximal amount of threads, all running at the same time
+ * - Terminating some of them after they've all spawned and ran at least once
+ * - Spawning some again, expecting them to get the lowest available IDs
+ */
+TEST(Test3, StressTestAndThreadCreationOrder) {
+    // you can increase the quantum length, but even the smallest quantum should work
+    int priorities[] = { 1 };
+    initializeWithPriorities<1>(priorities);
+
+    // this is volatile, otherwise when compiling in -O2, the compiler considers the waiting loop further below
+    // as an infinite loop and optimizes it as such.
+    static volatile int ranAtLeastOnce = 0;
+    auto f = [](){
+        ++ranAtLeastOnce;
+        while (true) {}
+    };
+
+    // you can lower this if you're trying to debug, but this should pass as is
+    const int SPAWN_COUNT = MAX_THREAD_NUM - 1;
+    std::vector<int> spawnedThreads;
+    for (int i=1; i <= SPAWN_COUNT ; ++i)
+    {
+        EXPECT_EQ ( uthread_spawn(f, 0), i);
+        spawnedThreads.push_back(i);
+    }
+
+    // wait for all spawned threads to run at least once
+    while (ranAtLeastOnce != SPAWN_COUNT) {}
+
+    if (SPAWN_COUNT == MAX_THREAD_NUM - 1) {
+        // by now, including the 0 thread, we have MAX_THREAD_NUM threads
+        // therefore further thread spawns should fail
+
+        EXPECT_EQ ( uthread_spawn(f, 0), -1);
+    }
+
+    // now, terminate 1/3 of the spawned threads (selected randomly)
+    std::random_device rd;
+    std::shuffle(spawnedThreads.begin(),
+                 spawnedThreads.end(),
+                 rd);
+    std::vector<int> threadsToRemove ( spawnedThreads.begin(),
+                                       spawnedThreads.begin() + SPAWN_COUNT * 1/3);
+    for (const int& tid: threadsToRemove)
+    {
+        EXPECT_EQ (uthread_terminate(tid), 0);
+    }
+
+    // now, we'll spawn an amount of threads equal to those that were terminated
+    // we expect the IDs of the spawned threads to equal those that were
+    // terminated, but in sorted order from smallest to largest
+    std::sort(threadsToRemove.begin(), threadsToRemove.end());
+    for (const int& expectedTid: threadsToRemove)
+    {
+        EXPECT_EQ (uthread_spawn(f, 0), expectedTid);
+    }
+
+    ASSERT_EXIT ( uthread_terminate(0), ::testing::ExitedWithCode(0), "");
+}
