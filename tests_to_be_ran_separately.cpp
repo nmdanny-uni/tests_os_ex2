@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <random>
 #include <algorithm>
+#include <chrono>
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
  *                        IMPORTANT
@@ -45,9 +46,7 @@ void initializeWithPriorities(int lengths[priorityCount])
 /**
  * Causes the currently running thread to sleep for a given number
  * of thread-quantums, that is, by counting the thread's own quantums.
- * Unlike "block", this
- *
- *
+ * Unlike "block", this works for the main thread too.
  *
  * @param threadQuants Positive number of quantums to sleep for
  */
@@ -73,6 +72,9 @@ void threadQuantumSleep(int threadQuants)
 }
 
 
+/**
+ * Testing most stuff
+ */
 TEST(Test1, BasicFunctionality)
 {
     int priorites[] = { 100 * MILLISECOND};
@@ -119,8 +121,51 @@ TEST(Test1, BasicFunctionality)
    ASSERT_EXIT(uthread_terminate(0), ::testing::ExitedWithCode(0), "");
 }
 
+TEST(Test2, ThreadSchedulingWithTermination)
+{
+    int priorities[] = { MILLISECOND };
+    initializeWithPriorities<1>(priorities);
 
-TEST(Test2, ThreadInteraction)
+    static bool reached_middle = false;
+
+    auto f = [](){
+        EXPECT_TRUE ( reached_middle );
+        uthread_terminate(0);
+
+    };
+
+    auto g = [](){
+        EXPECT_EQ ( uthread_resume(1), 0);
+        EXPECT_EQ ( uthread_terminate(2), 0);
+    };
+
+
+    EXPECT_EQ ( uthread_spawn(f, 0), 1);
+    EXPECT_EQ ( uthread_spawn(g, 0), 2);
+    EXPECT_EQ ( uthread_block(1), 0);
+
+    threadQuantumSleep(1);
+    // since thread f is blocked, we expect to go to g, which will resume f
+    // but we'll visit the main thread once again, and only then to 'f', which will then terminate the program.
+
+    std::cout << "Then this" << std::endl;
+
+    reached_middle = true;
+
+    ASSERT_EXIT(threadQuantumSleep(1) , ::testing::ExitedWithCode(0), "");
+    // technical note:
+    // threadQuantumSleep doesn't directly cause the program to shut-down, but during this
+    // expression, we will jump to 'f', which does terminate the program
+    //
+    // for some reason, GoogleTest crashes with a segfault when placing the ASSERT_EXIT
+    // at 'f', I'm guessing because GoogleTest does some weird stuff when doing
+    // ASSERT_EXIT (forking the process/re-running) and we're terminating the program
+    // from a non-default stack, that maybe gtest doesn't recognize.
+
+}
+
+
+TEST(Test3, ThreadInteraction)
 {
     int priorities[] = { 100 * MILLISECOND };
     initializeWithPriorities<1>(priorities);
@@ -218,7 +263,7 @@ TEST(Test2, ThreadInteraction)
  * - Terminating some of them after they've all spawned and ran at least once
  * - Spawning some again, expecting them to get the lowest available IDs
  */
-TEST(Test3, StressTestAndThreadCreationOrder) {
+TEST(Test4, StressTestAndThreadCreationOrder) {
     // you can increase the quantum length, but even the smallest quantum should work
     int priorities[] = { 1 };
     initializeWithPriorities<1>(priorities);
@@ -270,6 +315,63 @@ TEST(Test3, StressTestAndThreadCreationOrder) {
     {
         EXPECT_EQ (uthread_spawn(f, 0), expectedTid);
     }
+
+    ASSERT_EXIT ( uthread_terminate(0), ::testing::ExitedWithCode(0), "");
+}
+
+/**
+ * Times an operation, INCLUDING time in other threads
+ * @return Time in microseconds
+ */
+template <class Function>
+int timeOperation(Function op) {
+   using namespace std::chrono;
+
+    auto start = high_resolution_clock::now();
+    op();
+    auto stop = high_resolution_clock::now();
+    auto elapsed_us = duration_cast<microseconds>(stop - start).count();
+    return elapsed_us;
+}
+
+TEST(Test5, TimesAndPriorities)
+{
+    int priorities[] = { 300 * MILLISECOND, 600 * MILLISECOND , SECOND};
+    initializeWithPriorities<3>(priorities);
+
+    // Compenstate for timing inaccuracies, since chrono doesn't measure virtual time exactly
+    const int TIME_EPSILON = 50 * MILLISECOND;
+
+    auto f = [](){
+        // note that changing the thread's priority only takes affect the next
+        // time it is scheduled
+        EXPECT_EQ ( uthread_change_priority(1, 2), 0);
+        while (true) {};
+    };
+
+    // note that the thread is spawned with priority 1
+    EXPECT_EQ ( uthread_spawn(f, 1), 1);
+
+    // it should take about 900ms for this operation to finish:
+    // ~300ms to finish thread 0's quantum and switch to thread 1
+    // +600ms until we switch back here
+    int delta = timeOperation([&]() {  threadQuantumSleep(1); });
+    ASSERT_NEAR(delta, 900 * MILLISECOND, TIME_EPSILON);
+
+
+    // now it should take 1300ms for this operation to finish,
+    // ~300ms to finish thread 0 and go to thread 1
+    // +1000ms to finish with thread 1 (since we increased its priority) and go back here
+    int delta2 = timeOperation([&]() {  threadQuantumSleep(1); });
+    ASSERT_NEAR(delta2, 1300 * MILLISECOND, TIME_EPSILON);
+
+    // now we'll ensure that you can change another thread's priority
+    EXPECT_EQ ( uthread_change_priority(1, 0), 0);
+
+    // 300ms + 300ms, since we changed t1's priority before it was scheduled, the change
+    // takes effect immediately
+    int delta3 = timeOperation([&]() {  threadQuantumSleep(1); });
+    ASSERT_NEAR(delta3, 600 * MILLISECOND, TIME_EPSILON);
 
     ASSERT_EXIT ( uthread_terminate(0), ::testing::ExitedWithCode(0), "");
 }
