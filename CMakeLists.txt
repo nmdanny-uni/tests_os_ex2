@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.1)
 
 project(testers VERSION 1.0 LANGUAGES C CXX)
 
+#######################################
 ### SETTING UP GOOGLE TEST ###
 
 # Download and unpack googletest at configure time
@@ -36,8 +37,6 @@ if (CMAKE_VERSION VERSION_LESS 2.8.11)
     include_directories("${gtest_SOURCE_DIR}/include")
 endif()
 
-# Now simply link against gtest or gtest_main as needed. Eg
-
 
 #######################################
 
@@ -47,4 +46,4 @@ target_link_libraries(theTests PRIVATE uthreads gtest_main)
 set_property(TARGET theTests PROPERTY CXX_STANDARD 11)
 target_compile_options(theTests PUBLIC -Wall -Wextra)
 
-add_test(NAME example_test COMMAND Basic1)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
