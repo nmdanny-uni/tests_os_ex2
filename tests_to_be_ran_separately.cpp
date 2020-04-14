@@ -127,10 +127,12 @@ TEST(Test2, ThreadSchedulingWithTermination)
     initializeWithPriorities<1>(priorities);
 
     static bool reached_middle = false;
+    static bool reached_f = false;
 
     auto f = [](){
         EXPECT_TRUE ( reached_middle );
-        uthread_terminate(0);
+        reached_f = true;
+        EXPECT_EQ ( uthread_terminate(1), 0);
 
     };
 
@@ -145,22 +147,19 @@ TEST(Test2, ThreadSchedulingWithTermination)
     EXPECT_EQ ( uthread_block(1), 0);
 
     threadQuantumSleep(1);
-    // since thread f is blocked, we expect to go to g, which will resume f
-    // but we'll visit the main thread once again, and only then to 'f', which will then terminate the program.
-
-    std::cout << "Then this" << std::endl;
+    // since thread f is blocked, we expect to go to g, after which we'll go back to main thread
 
     reached_middle = true;
 
-    ASSERT_EXIT(threadQuantumSleep(1) , ::testing::ExitedWithCode(0), "");
-    // technical note:
-    // threadQuantumSleep doesn't directly cause the program to shut-down, but during this
-    // expression, we will jump to 'f', which does terminate the program
-    //
-    // for some reason, GoogleTest crashes with a segfault when placing the ASSERT_EXIT
-    // at 'f', I'm guessing because GoogleTest does some weird stuff when doing
-    // ASSERT_EXIT (forking the process/re-running) and we're terminating the program
-    // from a non-default stack, that maybe gtest doesn't recognize.
+    // next, we'll go to f, and then back here(since g was terminataed)
+    threadQuantumSleep(1);
+
+    EXPECT_TRUE (reached_f);
+
+    // in total we had 5 quantums: 0->2->0->1->0
+    EXPECT_EQ ( uthread_get_total_quantums(), 5);
+
+    ASSERT_EXIT(uthread_terminate(0) , ::testing::ExitedWithCode(0), "");
 
 }
 
