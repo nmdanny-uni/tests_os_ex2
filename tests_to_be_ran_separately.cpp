@@ -164,7 +164,10 @@ TEST(Test2, ThreadSchedulingWithTermination)
 }
 
 
-TEST(Test3, ThreadInteraction)
+/** In this test there's a total of 3 threads, including main one,
+ *  and we basically track their order of execution
+ */
+TEST(Test3, ThreadExecutionOrder)
 {
     int priorities[] = { 100 * MILLISECOND };
     initializeWithPriorities<1>(priorities);
@@ -174,69 +177,47 @@ TEST(Test3, ThreadInteraction)
     // to thread id
     static std::map<int, int> quantumsToTids;
 
-    static std::vector<int> sequence;
 
-    // thread 1 emits the numbers 1,2,3,4 to sequence,
-    // blocking itself after every number
-    auto t1 = [](){
-        int tid = 1;
-        EXPECT_EQ(tid, uthread_get_tid());
+    auto t = [](){
+        int tid = uthread_get_tid();
         for (int i=1; i <= 4; ++i)
         {
             EXPECT_EQ( uthread_get_quantums(tid), i );
-            sequence.push_back(i);
             quantumsToTids[uthread_get_total_quantums()] = tid;
             EXPECT_EQ( uthread_block(tid), 0);
         }
         EXPECT_EQ( uthread_terminate(tid), 0);
     };
 
-    // thread 2 does the same as 1, but emits -1,-2,-3,-4
-    auto t2 = [](){
-        int tid = 2;
-        EXPECT_EQ(tid, uthread_get_tid());
-        for (int i=1; i <= 4; ++i)
-        {
-            EXPECT_EQ( uthread_get_quantums(tid), i );
-            sequence.push_back(-i);
-            quantumsToTids[uthread_get_total_quantums()] = tid;
-            EXPECT_EQ( uthread_block(tid), 0);
+    // every one of the 2 spawned threads will block itself
+    // every iteration, up to 4 iterations, then terminate itself
+    EXPECT_EQ(uthread_spawn(t, 0), 1);
+    EXPECT_EQ(uthread_spawn(t, 0), 2);
 
-        }
-        EXPECT_EQ( uthread_terminate(tid), 0);
-    };
-
-    EXPECT_EQ(uthread_spawn(t1, 0), 1);
-    EXPECT_EQ(uthread_spawn(t2, 0), 2);
-
-    // meanwhile, thread 0 (which began first) will be emitting
-    // '50', '60', '70', '80'
+    // the main thread will also "block" itself every iteration,
+    // but "blocking" is done by busy waiting, and it will also resume the other 2 threads
     for (int i=1; i <= 4; ++i)
     {
+        // sanity check
+        EXPECT_EQ(uthread_get_tid(), 0);
 
-        // if both threads are blocked(for i>=2),
-        // we'll first enqueue 2 then 1 into the ready queue
-        // otherwise(i=1) this has no effect
+        // the order in which we resume is only significant if
+        // the threads were blocked, in the first iteration,
+        // both threads aren't blocked, so this doesn't change
+        // their order in the queue
         EXPECT_EQ( uthread_resume(2), 0);
         EXPECT_EQ( uthread_resume(1), 0);
-
-        // see below the expected thread order
         EXPECT_EQ(uthread_get_quantums(0), i);
-        sequence.push_back(40 + i*10);
+
         quantumsToTids[uthread_get_total_quantums()] = 0;
         threadQuantumSleep(1);
     }
 
-    // expected thread order should be:
-    // 0-1-2 2-1-0 2-1-0 2-1-0
-    std::vector<int> expectedSequence { 50, 1, -1,
-                                        60, -2, 2,
-                                        70, -3, 3,
-                                        80, -4, 4};
-    EXPECT_EQ(sequence, expectedSequence);
+    // therefore, we got the following execution:
+    // 0 -> 1 -> 2 -> 0 -> 2 -> 1 -> 0 -> 2 -> 1 -> 0 -> 2 -> 1 -> 0 -> exit
+    //[................][............][.............][...........][.........]
+    //      i=1              i=2         i=3              i=4        after loop
 
-    // if the above succeeded, so should the following one
-    // unless 'uthread_get_total_quantums' is bugged
     std::map<int, int> expectedQuantumsToTids {
         {1, 0},
         {2,1},
