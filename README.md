@@ -15,7 +15,7 @@ of testing your assumptions and seeing how the thread library works.
 ## Important notes
 
   
-- If you think the tests are factually incorrect(they assert wrong things), then please create a Github issue
+- If you think the tests are factually incorrect(they assert wrong things), then please [create a Github issue](https://github.cs.huji.ac.il/danielkerbel/tests_os_ex2/issues/new)
   
   Note that crashes and segfaults are most likely because of problems with your own code and not with the tests
   (except for some things - see notes below) - remember that functions of the thread library shouldn't crash/terminate
@@ -27,7 +27,8 @@ of testing your assumptions and seeing how the thread library works.
   I recommend you start with a large `STACK_SIZE` (e.g, `16384`), and only once you've fixed all bugs, try using a smaller stack
   size. (Modify your own `uthreads.h`)
   
-  * Note that the Address sanitizer itself adds a non trivial amount of overhead to the stack
+  * Note that the Address sanitizer itself adds a non trivial amount of overhead to the stack, and requires the stack
+    size to be a power of 2
   
 - You can't run all tests at once normally, you must run them one-by one or via all via a shell script.
   [See below](#usage-guide).
@@ -138,8 +139,9 @@ Some important notes:
   otherwise tests that may have passed normally, would fail with ASan, and warnings issued by ASan might not reflect
   issues in your program.
   
-  (For me, a stack size of `8196` seems to work OK, but this is highly dependant on your environment and implementation)
-
+  Moreover, when using ASan, your **stack size should be a power of 2**. For me, `8192` works OK, though you might want
+  more (e.g `16384`)
+  
 - In some cases, running via CLion won't show the sanitizer's message, instead showing weird stuff like 
   `AddressSanitizer: nested bug in the same thread, aborting.`
   
