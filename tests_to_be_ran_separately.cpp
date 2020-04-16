@@ -33,12 +33,17 @@ static const int SECOND = MILLISECOND * 1000;
  * If it fails, either you didn't implement these correctly,
  * or you ran multiple tests at the same time - see above note.
  */
-template <int priorityCount>
-void initializeWithPriorities(int lengths[priorityCount])
+void initializeWithPriorities(int *lengths, int priorityCount)
 {
     ASSERT_EQ( uthread_init(lengths, priorityCount), 0);
     // First total number of quantums is always 1(the main thread)
     ASSERT_EQ ( uthread_get_total_quantums(), 1);
+
+    if (STACK_SIZE < 8192)
+    {
+        std::cout << "(NOT AN ERROR) Your STACK_SIZE is " << STACK_SIZE << ", you might want to consider increasing it to at least 8192\n"
+                  << "               If you have no trouble with the current stack size, ignore this message. " << std::endl;
+    }
 }
 
 
@@ -61,10 +66,8 @@ void threadQuantumSleep(int threadQuants)
      * must obtain 'end'.
      *
      * Theoretically, it's possible that the thread will be preempted before the condition check occurs, if this happens,
-     * you'll have an infinite loop(at least if/until the quantum count overflows and returns to 'end'...)
-     * But with the quantum lengths specified in the test initialization, this should NOT happen.
-     *
-     * Therefore, if somehow you do have an infinite loop here, the problem might be on your end.
+     * the above won't hold, and you'll get an infinite loop. But this is unlikely, as the following operation should
+     * take much less than a microsecond
      */
     while (uthread_get_quantums(myId) != end)
     {
@@ -78,13 +81,13 @@ void threadQuantumSleep(int threadQuants)
 TEST(Test1, BasicFunctionality)
 {
     int priorites[] = { 100 * MILLISECOND};
-    initializeWithPriorities<1>(priorites);
+    initializeWithPriorities(priorites, 1);
 
     // main thread has only started one(the current) quantum
     EXPECT_EQ(uthread_get_quantums(0), 1);
 
     static bool ran = false;
-    // most CPP compilers will translate this to a normal function call (there's no closure)
+    // most CPP compilers will translate this to a normal function (there's no closure)
     auto t1 = []()
     {
         EXPECT_EQ(uthread_get_tid(), 1);
@@ -124,7 +127,7 @@ TEST(Test1, BasicFunctionality)
 TEST(Test2, ThreadSchedulingWithTermination)
 {
     int priorities[] = { MILLISECOND };
-    initializeWithPriorities<1>(priorities);
+    initializeWithPriorities(priorities, 1);
 
     static bool reached_middle = false;
     static bool reached_f = false;
@@ -170,7 +173,7 @@ TEST(Test2, ThreadSchedulingWithTermination)
 TEST(Test3, ThreadExecutionOrder)
 {
     int priorities[] = { 100 * MILLISECOND };
-    initializeWithPriorities<1>(priorities);
+    initializeWithPriorities(priorities, 1);
 
 
     // maps number of passed quantums(ran in each of the loops)
@@ -246,7 +249,7 @@ TEST(Test3, ThreadExecutionOrder)
 TEST(Test4, StressTestAndThreadCreationOrder) {
     // you can increase the quantum length, but even the smallest quantum should work
     int priorities[] = { 1 };
-    initializeWithPriorities<1>(priorities);
+    initializeWithPriorities(priorities, 1);
 
     // this is volatile, otherwise when compiling in -O2, the compiler considers the waiting loop further below
     // as an infinite loop and optimizes it as such.
@@ -317,7 +320,7 @@ int timeOperation(Function op) {
 TEST(Test5, TimesAndPriorities)
 {
     int priorities[] = { 300 * MILLISECOND, 600 * MILLISECOND , SECOND};
-    initializeWithPriorities<3>(priorities);
+    initializeWithPriorities(priorities, 3);
 
     // Compenstate for timing inaccuracies, since chrono doesn't measure virtual time exactly
     const int TIME_EPSILON = 100 * MILLISECOND;
@@ -370,8 +373,7 @@ class RandomThreadTesting {
           rand{std::random_device{}()}
         {
             std::copy(pr.begin(), pr.end(), priorities.get());
-            EXPECT_EQ(uthread_init(priorities.get(), priorityCount), 0);
-            EXPECT_EQ(uthread_get_total_quantums(), 1);
+            initializeWithPriorities(priorities.get(), priorityCount);
         }
 
         int getRandomActiveThread()
