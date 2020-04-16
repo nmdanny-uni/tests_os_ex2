@@ -320,7 +320,7 @@ TEST(Test5, TimesAndPriorities)
     initializeWithPriorities<3>(priorities);
 
     // Compenstate for timing inaccuracies, since chrono doesn't measure virtual time exactly
-    const int TIME_EPSILON = 50 * MILLISECOND;
+    const int TIME_EPSILON = 100 * MILLISECOND;
 
     auto f = [](){
         // note that changing the thread's priority only takes affect the next
@@ -353,5 +353,103 @@ TEST(Test5, TimesAndPriorities)
     int delta3 = timeOperation([&]() {  threadQuantumSleep(1); });
     ASSERT_NEAR(delta3, 600 * MILLISECOND, TIME_EPSILON);
 
+    ASSERT_EXIT ( uthread_terminate(0), ::testing::ExitedWithCode(0), "");
+}
+
+class RandomThreadTesting {
+        std::set<int> activeThreads;
+        std::unique_ptr<int[]> priorities;
+        int priorityCount;
+        std::mt19937 rand;
+
+    public:
+        RandomThreadTesting(std::initializer_list<int> pr)
+        : activeThreads(),
+          priorities(new int[pr.size()]),
+          priorityCount(pr.size()),
+          rand{std::random_device{}()}
+        {
+            std::copy(pr.begin(), pr.end(), priorities.get());
+            EXPECT_EQ(uthread_init(priorities.get(), priorityCount), 0);
+            EXPECT_EQ(uthread_get_total_quantums(), 1);
+        }
+
+        int getRandomActiveThread()
+        {
+            auto it = activeThreads.begin();
+            auto dist  = std::uniform_int_distribution<>(0, activeThreads.size() - 1);
+            std::advance(it, dist(rand));
+            assert (it != activeThreads.end());
+            return *it;
+        }
+
+
+        /**
+         * Perform random thread library operation, except those involving thread 0
+         * @param func Thread function if spawning
+         */
+        void doOperation(void (*func)())
+        {
+            // 50% chance of doing a thread operation(1-5), 50% of not doing anything(6-10)
+            // if there are no threads, create new one
+            int option = std::uniform_int_distribution<>(1, 10)(rand);
+            if (activeThreads.empty() || option == 1)
+            {
+                // try creating a thread
+                int priority = std::uniform_int_distribution<>(0, priorityCount-1)(rand);
+                if (activeThreads.size() == MAX_THREAD_NUM - 1)
+                {
+                    EXPECT_EQ(uthread_spawn(func, priority), -1);
+                } else {
+                    int tid = uthread_spawn(func, priority);
+                    EXPECT_GT(tid, 0);
+                    activeThreads.emplace(tid);
+                }
+            } else {
+                int tid = getRandomActiveThread();
+                if (option == 2) {
+                    // change thread priority
+                    int priority = std::uniform_int_distribution<>(0, priorityCount-1)(rand);
+                    EXPECT_EQ(uthread_change_priority(tid, priority), 0);
+                } else if (option == 3)
+                {
+                    // terminate thread
+                    EXPECT_EQ(uthread_terminate(tid), 0);
+                    activeThreads.erase(tid);
+                } else if (option == 4)
+                {
+                    // block thread
+                    EXPECT_EQ(uthread_block(tid), 0);
+                } else if (option == 5)
+                {
+                    // resume thread
+                    EXPECT_EQ(uthread_resume(tid), 0);
+                } else {
+                    // don't perform a thread operation
+                }
+            } // OOP? open closed principle? ain't nobody got time for that
+        }
+
+
+    };
+
+/** This test performs a bunch of random thread library operations, it is used
+ *  to detect crashes and other memory errors
+ *
+ */
+TEST(Test6, RandomThreadOperations)
+{
+    RandomThreadTesting rtt ({1});
+
+    const int ITER_COUNT = 100000;
+
+    auto f = [](){
+        while (true) {
+        }
+    };
+    for (int i=0; i < ITER_COUNT; ++i)
+    {
+        rtt.doOperation(f);
+    }
     ASSERT_EXIT ( uthread_terminate(0), ::testing::ExitedWithCode(0), "");
 }
