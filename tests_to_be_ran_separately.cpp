@@ -393,18 +393,13 @@ class RandomThreadTesting {
             // 50% chance of doing a thread operation(1-5), 50% of not doing anything(6-10)
             // if there are no threads, create new one
             int option = std::uniform_int_distribution<>(1, 10)(rand);
-            if (activeThreads.empty() || option == 1)
+            if (activeThreads.empty() || (option == 1 && activeThreads.size() < MAX_THREAD_NUM - 1) )
             {
-                // try creating a thread
+                // create a thread
                 int priority = std::uniform_int_distribution<>(0, priorityCount-1)(rand);
-                if (activeThreads.size() == MAX_THREAD_NUM - 1)
-                {
-                    EXPECT_EQ(uthread_spawn(func, priority), -1);
-                } else {
-                    int tid = uthread_spawn(func, priority);
-                    EXPECT_GT(tid, 0);
-                    activeThreads.emplace(tid);
-                }
+                int tid = uthread_spawn(func, priority);
+                EXPECT_GT(tid, 0);
+                activeThreads.emplace(tid);
             } else {
                 int tid = getRandomActiveThread();
                 if (option == 2) {
