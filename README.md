@@ -33,8 +33,8 @@ of testing your assumptions and seeing how the thread library works.
 - You can't run all tests at once normally, you must run them one-by one or via all via a shell script.
   [See below](#usage-guide).
  
-- Test5 (Times and priorities) is inaccurate, sometimes it will pass and sometimes it will fail, this is
-  because it measures real time and not virtual time. You may need to run it multiple times or increase `TIME_EPSIOLON` to get
+- Test5 (Times and priorities) is inaccurate, sometimes it will pass and sometimes it will fail, 
+  You may need to run it multiple times or increase `TIME_EPSIOLON` to get
   the test to pass.
   
 - A good observation was raised in [the forums](https://moodle2.cs.huji.ac.il/nu19/mod/forum/discuss.php?d=60001) - in 

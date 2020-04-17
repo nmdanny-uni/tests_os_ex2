@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <random>
 #include <algorithm>
-#include <chrono>
+#include <ctime>
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
  *                        IMPORTANT
@@ -307,23 +307,21 @@ TEST(Test4, StressTestAndThreadCreationOrder) {
  * @return Time in microseconds
  */
 template <class Function>
-int timeOperation(Function op) {
-   using namespace std::chrono;
-
-    auto start = high_resolution_clock::now();
+uint64_t timeOperation(Function op) {
+    std::clock_t start = std::clock();
     op();
-    auto stop = high_resolution_clock::now();
-    auto elapsed_us = duration_cast<microseconds>(stop - start).count();
+    std::clock_t stop = std::clock();
+    double elapsed_us = 1e6 * ((double)(stop - start))/CLOCKS_PER_SEC;
     return elapsed_us;
 }
 
 TEST(Test5, TimesAndPriorities)
 {
-    int priorities[] = { 300 * MILLISECOND, 600 * MILLISECOND , SECOND};
+    int priorities[] = { 300*MILLISECOND, SECOND, 2 * SECOND};
     initializeWithPriorities(priorities, 3);
 
-    // Compenstate for timing inaccuracies, since chrono doesn't measure virtual time exactly
-    const int TIME_EPSILON = 100 * MILLISECOND;
+    // Compenstate for timing inaccuracies
+    const int TIME_EPSILON = 300 * MILLISECOND;
 
     auto f = [](){
         // note that changing the thread's priority only takes affect the next
@@ -335,18 +333,18 @@ TEST(Test5, TimesAndPriorities)
     // note that the thread is spawned with priority 1
     EXPECT_EQ ( uthread_spawn(f, 1), 1);
 
-    // it should take about 900ms for this operation to finish:
+    // it should take about 1300ms for this operation to finish:
     // ~300ms to finish thread 0's quantum and switch to thread 1
-    // +600ms until we switch back here
+    // +1000ms until we switch back here
     int delta = timeOperation([&]() {  threadQuantumSleep(1); });
-    ASSERT_NEAR(delta, 900 * MILLISECOND, TIME_EPSILON);
+    ASSERT_NEAR(delta, 1300 * MILLISECOND, TIME_EPSILON);
 
 
-    // now it should take 1300ms for this operation to finish,
+    // now it should take 2300ms for this operation to finish,
     // ~300ms to finish thread 0 and go to thread 1
-    // +1000ms to finish with thread 1 (since we increased its priority) and go back here
+    // +2000ms to finish with thread 1 (since we increased its priority) and go back here
     int delta2 = timeOperation([&]() {  threadQuantumSleep(1); });
-    ASSERT_NEAR(delta2, 1300 * MILLISECOND, TIME_EPSILON);
+    ASSERT_NEAR(delta2, 2300 * MILLISECOND, TIME_EPSILON);
 
     // now we'll ensure that you can change another thread's priority
     EXPECT_EQ ( uthread_change_priority(1, 0), 0);
