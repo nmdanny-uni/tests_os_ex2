@@ -37,6 +37,9 @@ of testing your assumptions and seeing how the thread library works.
   You may need to run it multiple times or increase `TIME_EPSIOLON` to get
   the test to pass.
   
+  You can also try compiling with `-O2`(add to `target_compile_options` in the example CMakeLists below) flag or disabling print statements
+  to decrease your code's overhead which might affect measurement.
+  
 - A good observation was raised in [the forums](https://moodle2.cs.huji.ac.il/nu19/mod/forum/discuss.php?d=60001) - in 
   short, some operations such as allocation are not "signal-safe", that is, if a signal occurs during an allocation
   procedure or such, the program may be left in an undefined state.
