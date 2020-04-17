@@ -4,6 +4,7 @@
 #include <random>
 #include <algorithm>
 #include <ctime>
+#include <regex>
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
  *                        IMPORTANT
@@ -27,6 +28,21 @@ TEST(DO_NOT_RUN_ALL_TESTS_AT_ONCE, READ_THIS)
 // conversions to microseconds:
 static const int MILLISECOND = 1000;
 static const int SECOND = MILLISECOND * 1000;
+
+/** Given a function, expects it to return -1 and that a thread library
+ *  error message is printed to stderr
+ */
+template <class Function>
+void expect_thread_library_error(Function function) {
+    testing::internal::CaptureStderr();
+    int retCode = function();
+    std::string errOut = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(retCode, -1) << "failed thread library call should return -1";
+    std::regex expectedPattern("thread library error: .*\\n");
+    if (!std::regex_match(errOut, expectedPattern)) {
+        ADD_FAILURE() << "no appropriate STDERR message was printed for failed thread library call";
+    }
+}
 
 /**
  * This function initializes the library with given priorities.
@@ -76,15 +92,34 @@ void threadQuantumSleep(int threadQuants)
 
 
 /**
- * Testing most stuff
+ * Testing basic thred library functionality and expected errors
  */
 TEST(Test1, BasicFunctionality)
 {
+    // first, initializing library with invalid parameters should fail
+    int invalidPriorities1[] = { -1337};
+    expect_thread_library_error([&](){
+        return uthread_init(invalidPriorities1, 1);
+    });
+
     int priorites[] = { 100 * MILLISECOND};
+
+    expect_thread_library_error([&](){
+        // invalid size
+        return uthread_init(priorites, 0);
+    });
+
+    // initialize it for real now.
     initializeWithPriorities(priorites, 1);
+
+    // can't block main thread
+    expect_thread_library_error([](){
+        return uthread_block(0);
+    });
 
     // main thread has only started one(the current) quantum
     EXPECT_EQ(uthread_get_quantums(0), 1);
+
 
     static bool ran = false;
     // most CPP compilers will translate this to a normal function (there's no closure)
@@ -120,6 +155,21 @@ TEST(Test1, BasicFunctionality)
     EXPECT_TRUE(ran);
     EXPECT_EQ(uthread_get_quantums(0), 2);
     EXPECT_EQ(uthread_get_total_quantums(), 3);
+
+    // by now thread 1 was terminated, so operations on it should fail
+    expect_thread_library_error([](){
+        return uthread_get_quantums(1);
+    });
+    expect_thread_library_error([](){
+        return uthread_block(1);
+    });
+    expect_thread_library_error([](){
+        return uthread_resume(1);
+    });
+    expect_thread_library_error([](){
+        return uthread_terminate(1);
+    });
+
 
    ASSERT_EXIT(uthread_terminate(0), ::testing::ExitedWithCode(0), "");
 }
@@ -254,7 +304,7 @@ TEST(Test4, StressTestAndThreadCreationOrder) {
     // this is volatile, otherwise when compiling in -O2, the compiler considers the waiting loop further below
     // as an infinite loop and optimizes it as such.
     static volatile int ranAtLeastOnce = 0;
-    auto f = [](){
+    static auto f = [](){
         ++ranAtLeastOnce;
         while (true) {}
     };
@@ -275,7 +325,7 @@ TEST(Test4, StressTestAndThreadCreationOrder) {
         // by now, including the 0 thread, we have MAX_THREAD_NUM threads
         // therefore further thread spawns should fail
 
-        EXPECT_EQ ( uthread_spawn(f, 0), -1);
+        expect_thread_library_error([](){ return uthread_spawn(f, 0);});
     }
 
     // now, terminate 1/3 of the spawned threads (selected randomly)
