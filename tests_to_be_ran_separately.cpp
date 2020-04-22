@@ -127,7 +127,7 @@ TEST(Test1, BasicFunctionality)
     {
         EXPECT_EQ(uthread_get_tid(), 1);
 
-        // every thread begins with 1 quantums
+        // this thread has just begun, thus exactly 1 quantum was started by this thread
         EXPECT_EQ(uthread_get_quantums(1), 1);
 
         // main thread's quantums are unchanged
@@ -174,6 +174,7 @@ TEST(Test1, BasicFunctionality)
    ASSERT_EXIT(uthread_terminate(0), ::testing::ExitedWithCode(0), "");
 }
 
+/** A slightly more complex test, involving two threads, blocking and resuming(jumping to each thread only once) */
 TEST(Test2, ThreadSchedulingWithTermination)
 {
     int priorities[] = { MILLISECOND };
@@ -218,7 +219,8 @@ TEST(Test2, ThreadSchedulingWithTermination)
 
 
 /** In this test there's a total of 3 threads, including main one,
- *  and we basically track their order of execution
+ *  and a more complicated flow - we alternate between the 3 threads, each one running several times, see
+ *  comment below for expected execution order.
  */
 TEST(Test3, ThreadExecutionOrder)
 {
@@ -263,13 +265,20 @@ TEST(Test3, ThreadExecutionOrder)
         EXPECT_EQ(uthread_get_quantums(0), i);
 
         quantumsToTids[uthread_get_total_quantums()] = 0;
+        // during this call, the library should reschedule to thread 2(if i>=2) or thread 1(if i==1)
         threadQuantumSleep(1);
     }
 
-    // therefore, we got the following execution:
+    // we had a total of 13 quantums(1 at beginning, 4 during each iteration of the main loop, 4*2 for the iterations
+    // in each of the two threads loops)
+    EXPECT_EQ(uthread_get_total_quantums(), 13);
+    quantumsToTids[uthread_get_total_quantums()] = 0;
+
+    // this illustrates the expected thread execution order
     // 0 -> 1 -> 2 -> 0 -> 2 -> 1 -> 0 -> 2 -> 1 -> 0 -> 2 -> 1 -> 0 -> exit
-    //[................][............][.............][...........][.........]
-    //      i=1              i=2         i=3              i=4        after loop
+    //[..][...........][............][.............][...........][.........]
+    //start i=1              i=2         i=3              i=4        after loop
+    // (indices refer to main thread loop)
 
     std::map<int, int> expectedQuantumsToTids {
         {1, 0},
@@ -283,7 +292,8 @@ TEST(Test3, ThreadExecutionOrder)
         {9,1},
         {10,0},
         {11,2},
-        {12,1}
+        {12,1},
+        {13, 0}
     };
     EXPECT_EQ( quantumsToTids, expectedQuantumsToTids);
 
@@ -365,7 +375,7 @@ uint64_t timeOperation(Function op) {
     return elapsed_us;
 }
 
-TEST(Test5, TimesAndPriorities)
+TEST(DISABLED_Test5, TimesAndPriorities)
 {
     int priorities[] = { 300*MILLISECOND, SECOND, 2 * SECOND};
     initializeWithPriorities(priorities, 3);

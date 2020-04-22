@@ -12,12 +12,15 @@ Therefore, you should write your code using a lot of print statements, assert st
 Moreover, I recommend you try writing your own tests(with/without the googletest framework here), this is a great way
 of testing your assumptions and seeing how the thread library works.
 
+
 ## Important notes
 
   
-- If you think the tests are factually incorrect(they assert wrong things), then please [create a Github issue](https://github.cs.huji.ac.il/danielkerbel/tests_os_ex2/issues/new)
+- If you think the tests are incorrect, have a technical issue with running them
+  or have a question, then please [create a Github issue](https://github.cs.huji.ac.il/danielkerbel/tests_os_ex2/issues/new)
   
-  Note that crashes and segfaults are most likely because of problems with your own code and not with the tests
+  
+- Note that crashes and segfaults are most likely because of problems with your own code and not with the tests
   (except for some things - see notes below) - remember that functions of the thread library shouldn't crash/terminate
   ungracefully either way, even if the tests are wrong - in the worst case, googletest assertions will fail, but this
   shouldn't lead to segfaults and other memory corruption issues.
@@ -40,6 +43,9 @@ of testing your assumptions and seeing how the thread library works.
   You can also try compiling with `-O2`(add to `target_compile_options` in the example CMakeLists below) flag or disabling print statements
   to decrease your code's overhead which might affect measurement.
   
+  As of now, i've disabled it, if you want to try your luck, you can enable it by renaming `DISABLED_Test5` into `Test5`
+  at the test source code.
+  
 - A good observation was raised in [the forums](https://moodle2.cs.huji.ac.il/nu19/mod/forum/discuss.php?d=60001) - in 
   short, some operations such as allocation are not "signal-safe", that is, if a signal occurs during an allocation
   procedure or such, the program may be left in an undefined state.
@@ -54,7 +60,7 @@ of testing your assumptions and seeing how the thread library works.
 ## Installation guide
 
 The tests assume your project is using CMake on a modern Linux distribution(such as the Aquarium servers), 
-Windows and OSX aren't supported/tested. 
+Windows(Not even Cygwin/WSL/MSYS) and OSX aren't supported/tested.
 
 1. Within your project's root directory, type:
  
@@ -62,11 +68,8 @@ Windows and OSX aren't supported/tested.
    
    (Use your CSE credentials to login)
    
-2. Within your own project's `CMakeLists.txt`
-   - Ensure you're compiling a library called `uthreads`
-   - Add the tests directory via `add_subdirectory(tests)`
+2. Use the following `CMakeLists.txt` within your own project's root directory:
    
-   An example of such `CMakeLists.txt`:
    ```cmake
    cmake_minimum_required(VERSION 3.1)
    #set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
@@ -82,9 +85,22 @@ Windows and OSX aren't supported/tested.
    
    ```
    
-   (You can uncomment the two `set` statements to enable Address Sanitizer)
+   Note, the first argument to `add_library`, `uthreads`, must be present,
+   it is just a CMake target identifier, it isn't necessarily the name of
+   a file/folder. This is needed so that the CMakeLists under `tests`
+   subdirectory recognizes your library and uses it.
+
+   (You can uncomment the two `set` statements to enable Address Sanitizer,
+    but first, read the section about it [below](#address-sanitizer)
 
 ## Usage guide
+
+**Note**
+
+If you've previously compiled your library via CMake/CLion on a different
+platform than the one you're running tests(e.g, made project on home PC, testing on HUJI), you should clear the
+`cmake-build-debug` directory first(if using terminal), or [reload CMake project](https://www.jetbrains.com/help/clion/reloading-project.html#)
+if using CLion.
 
 ### Using CLion to run a single test at once
 
@@ -103,10 +119,9 @@ Note that if Address Sanitizer is enabled, memory errors will be considered as t
 ### Running a single test via terminal
 
 
-- `cd tests`
-- `cd PROJECT_ROOT/cmake-build-debug`
+- `cd PROJECT_ROOT/cmake-build-debug`  (if `cmake-build-debug` doesn't exist, create it via `mkdir`)
 - `cmake .. && make` 
-- `./tests/theTests --gtest_filter="Test3*"` 
+- `PROJECT_ROOT/tests/theTests --gtest_filter="Test3*"` 
 
   (replace `3` with the test number, keep the `*`)
 
@@ -127,7 +142,8 @@ able to understand what each test does.
 As an alternative to Valgrind, modern GCC and Clang compilers include built in support for ASan, read 
 more [here](https://github.com/google/sanitizers/wiki/AddressSanitizer)
 
-To use it, you can add the following lines to your project's `CMakeLists.txt` (not the tests):
+To use it, ensure the following lines are in your own `CMakeLists.txt` (and not
+commented out)
 ```cmake
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
@@ -153,7 +169,7 @@ Some important notes:
 - Just like with Valgrind, the warnings that ASan issues might not make sense, there may be false positives, etc..
 
   - A common false positive is `__asan_handle_no_return`, which happens when jumping from a thread that is later
-    terminated without returning to it.
+    terminated without returning to it - this is OK.
 
 ### Valgrind(Not for these tests)
 
@@ -166,4 +182,3 @@ and cause even the most basic things to fail, such as the very first call to `ut
 Therefore, Valgrind is absolutely not supported for these tests - prefer using Address Sanitizer instead. You might have
 more luck with Valgrind on your own tests though.
 
-###
